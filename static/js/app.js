@@ -150,7 +150,7 @@ function buildCard(result, idx) {
       </div>
     </div>
     <div class="card-forecast">
-      <div class="forecast-title">7-day flying forecast (10am–2pm window)</div>
+      <div class="forecast-title">7-day flying forecast (10am–5pm window)</div>
       <div class="forecast-days">${forecastHTML}</div>
     </div>`;
 
@@ -191,7 +191,7 @@ function openModal(result) {
       ${(current.factors || []).map(f => `<li>${f}</li>`).join('')}
     </ul>
 
-    <p class="modal-section-title">7-Day Forecast (Daytime Flying Window)</p>
+    <p class="modal-section-title">7-Day Forecast (10am–5pm Flying Window)</p>
     <div class="modal-daily-grid">${daysHTML}</div>
     <div id="day-detail"></div>
 

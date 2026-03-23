@@ -200,8 +200,8 @@ def evaluate_site(site, weather_data):
         hourly_window = daily_hourly.get(date, [])
 
         if hourly_window:
-            # Average key metrics over 10am-2pm window (best flying hours)
-            window = [h for h in hourly_window if 10 <= h["hour"] <= 14]
+            # Average key metrics over 10am-5pm window (best flying hours)
+            window = [h for h in hourly_window if 10 <= h["hour"] <= 17]
             if not window:
                 window = hourly_window
             avg_wind = _avg([h["wind_mph"] for h in window])
