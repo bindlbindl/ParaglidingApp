@@ -104,16 +104,21 @@ function buildCard(result, idx) {
     return card;
   }
 
-  const { site, current, daily } = result;
+  const { site, current, daily, xc } = result;
   const scoreClass = `score-${current.class}`;
+  const xcActive = xc && xc.count > 0;
+  const xcBadge = xcActive
+    ? `<span class="xc-badge" title="${xc.count} XC flight${xc.count > 1 ? 's' : ''} in last 30 days">XC ${xc.count}</span>`
+    : '';
 
   // Forecast strip (7 days)
   const forecastHTML = (daily || []).map(d => `
-    <div class="forecast-day">
+    <div class="forecast-day${d.xc_potential ? ' xc-day' : ''}">
       <span class="fd-day">${dayAbbr(d.date)}</span>
       <span class="fd-icon">${d.weather_icon}</span>
       <span class="fd-score ${d.class}">${d.score}</span>
       <span class="fd-wind">${d.wind_dir} ${d.wind_max !== null ? Math.round(d.wind_max) : '—'}</span>
+      ${d.xc_potential ? '<span class="fd-xc">XC</span>' : ''}
     </div>`).join('');
 
   card.innerHTML = `
@@ -124,6 +129,7 @@ function buildCard(result, idx) {
         <div class="site-meta">
           <span class="site-type-badge">${site.site_type}</span>
           &nbsp;·&nbsp; ~${site.drive_hours}h drive
+          ${xcBadge ? '&nbsp;·&nbsp;' + xcBadge : ''}
         </div>
       </div>
       <div class="score-badge">
@@ -161,11 +167,11 @@ function buildCard(result, idx) {
 // ── Modal ──────────────────────────────────────────────────
 function openModal(result) {
   currentModal = result;
-  const { site, current, daily } = result;
+  const { site, current, daily, xc } = result;
   const content = document.getElementById('modal-content');
 
   const daysHTML = (daily || []).map((d, i) => `
-    <div class="modal-day ${i === 0 ? 'active' : ''}" onclick="selectDay(${i})" data-idx="${i}">
+    <div class="modal-day ${i === 0 ? 'active' : ''}${d.xc_potential ? ' xc-day' : ''}" onclick="selectDay(${i})" data-idx="${i}">
       <span class="modal-day-name">${dayAbbr(d.date)}</span>
       <span class="modal-day-icon">${d.weather_icon}</span>
       <span class="modal-day-score ${d.class}">${d.score}</span>
@@ -195,6 +201,7 @@ function openModal(result) {
     <div class="modal-daily-grid">${daysHTML}</div>
     <div id="day-detail"></div>
 
+    ${buildXcSection(xc, site)}
     <p style="font-size:0.75rem;color:var(--text-muted);margin-top:20px;">${site.description}</p>
     <p style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;">Preferred wind: ${site.preferred_wind_dirs.join(', ')} · ${site.preferred_wind_min_mph}–${site.preferred_wind_max_mph} mph</p>`;
 
@@ -218,9 +225,13 @@ function renderDayDetail(idx) {
   const day = currentModal.daily[idx];
   if (!day) { panel.innerHTML = ''; return; }
 
+  const xcTag = day.xc_potential
+    ? ' &nbsp;<span class="xc-badge">XC potential</span>'
+    : '';
+
   panel.innerHTML = `
     <div class="day-detail-panel">
-      <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">${fmtDate(day.date)} — <span class="score-${day.class}">${day.label}</span> (${day.score}/100)</div>
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">${fmtDate(day.date)} — <span class="score-${day.class}">${day.label}</span> (${day.score}/100)${xcTag}</div>
       <div class="day-detail-grid">
         <div class="day-detail-item">
           <span class="day-detail-label">Weather</span>
@@ -243,6 +254,63 @@ function renderDayDetail(idx) {
         ${(day.factors || []).map(f => `<li>${f}</li>`).join('')}
       </ul>
     </div>`;
+}
+
+function buildXcSection(xc, site) {
+  // Only show XC section for thermal/mountain sites
+  if (!['thermal', 'mountain'].includes(site.site_type)) return '';
+
+  const header = `
+    <div class="xc-section">
+      <div class="xc-history-header">
+        <p class="modal-section-title" style="margin-bottom:0;">XContest — Recent XC Flights (30 days)</p>
+        <a href="https://www.xcontest.org/world/en/flights/#flights[start]=0@filter[route]=free_flight@filter[lat_lng]=${site.lat},${site.lon}@filter[radius]=20000"
+           target="_blank" rel="noopener"
+           style="font-size:0.72rem;color:var(--accent);text-decoration:none;">
+          View on XContest ↗
+        </a>
+      </div>`;
+
+  if (!xc) {
+    return header + `<p class="xc-none">XC data not loaded.</p></div>`;
+  }
+
+  if (xc.error && xc.count === 0) {
+    return header + `<p class="xc-error">Could not load XContest data (${xc.error}).</p></div>`;
+  }
+
+  if (xc.count === 0) {
+    return header + `<p class="xc-none">No XC flights logged near this site in the last 30 days.</p></div>`;
+  }
+
+  const statsHTML = `
+    <div class="xc-stats">
+      <div class="xc-stat">
+        <span class="xc-stat-label">Flights logged</span>
+        <span class="xc-stat-value">${xc.count}</span>
+      </div>
+      ${xc.best_km ? `
+      <div class="xc-stat">
+        <span class="xc-stat-label">Best distance</span>
+        <span class="xc-stat-value">${xc.best_km} km</span>
+      </div>` : ''}
+      ${xc.days_since_last !== null ? `
+      <div class="xc-stat">
+        <span class="xc-stat-label">Last flight</span>
+        <span class="xc-stat-value">${xc.days_since_last === 0 ? 'Today' : xc.days_since_last + 'd ago'}</span>
+      </div>` : ''}
+    </div>`;
+
+  const flights = xc.recent_flights || [];
+  const rowsHTML = flights.map(f => `
+    <div class="xc-flight-row">
+      <span class="xc-flight-date">${f.date || '—'}</span>
+      <span class="xc-flight-dist">${f.distance_km ? f.distance_km.toFixed(1) + ' km' : '—'}</span>
+      <span class="xc-flight-pilot">${f.pilot || '—'}</span>
+    </div>`).join('');
+
+  return header + statsHTML +
+    `<div class="xc-flight-list">${rowsHTML || '<p class="xc-none">No detailed flight data.</p>'}</div></div>`;
 }
 
 function closeModal() {

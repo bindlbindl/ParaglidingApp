@@ -240,6 +240,10 @@ def evaluate_site(site, weather_data):
         d_score = max(0, min(100, d_score))
         d_label, d_class, d_color = get_rating(d_score)
 
+        # Flag days with XC cross-country potential
+        xc_potential = _is_xc_day(site, d_score, avg_temp, avg_cape,
+                                   day.get("precip_in", 0), avg_precip_prob)
+
         desc, icon = weather_description(day.get("weather_code"))
         daily_evaluated.append({
             "date": date,
@@ -255,6 +259,7 @@ def evaluate_site(site, weather_data):
             "wind_max": avg_wind,
             "wind_dir": degrees_to_cardinal(avg_dir) if avg_dir else "N/A",
             "precip_prob": avg_precip_prob,
+            "xc_potential": xc_potential,
         })
 
     cur_desc, cur_icon = weather_description(current.get("weather_code"))
@@ -278,3 +283,29 @@ def evaluate_site(site, weather_data):
 def _avg(lst):
     vals = [v for v in lst if v is not None]
     return sum(vals) / len(vals) if vals else None
+
+
+def _is_xc_day(site, score, temp_f, cape, precip_in, precip_prob):
+    """
+    Return True if this forecast day looks good for XC cross-country flying.
+
+    Criteria (thermal / mountain sites only):
+      - Flyable conditions (score >= 55)
+      - Warm enough for thermals (≥ 60 °F)
+      - Minimal precipitation risk
+      - Some CAPE present or unknown (not confirmed bad)
+    """
+    if site["site_type"] not in ("thermal", "mountain"):
+        return False
+    if score < 55:
+        return False
+    if temp_f is not None and temp_f < 60:
+        return False
+    if precip_in and precip_in > 0.01:
+        return False
+    if precip_prob is not None and precip_prob > 35:
+        return False
+    # High CAPE (> 500) means convective instability — not safe for XC
+    if cape is not None and cape > 500:
+        return False
+    return True

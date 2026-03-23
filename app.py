@@ -11,6 +11,7 @@ import time
 from sites import SITES
 from weather import fetch_weather
 from conditions import evaluate_site
+import xcontest
 
 app = Flask(__name__)
 
@@ -45,6 +46,14 @@ def _fetch_site(site):
     return result
 
 
+# XContest cache is managed inside xcontest.py (6-hour TTL)
+def _fetch_site_with_xc(site):
+    result = _fetch_site(site)
+    xc_raw = xcontest.fetch_xc_flights(site)
+    result["xc"] = xcontest.summarise(xc_raw)
+    return result
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -55,10 +64,10 @@ def all_conditions():
     """Fetch all sites in parallel and return JSON."""
     results = []
     with ThreadPoolExecutor(max_workers=6) as executor:
-        future_to_site = {executor.submit(_fetch_site, s): s for s in SITES}
+        future_to_site = {executor.submit(_fetch_site_with_xc, s): s for s in SITES}
         for future in as_completed(future_to_site):
             try:
-                data = future.result(timeout=15)
+                data = future.result(timeout=30)
                 results.append(data)
             except Exception as e:
                 site = future_to_site[future]
@@ -82,6 +91,19 @@ def site_conditions(site_name):
     result = evaluate_site(site, weather)
     _set_cached(site["name"], result)
     return jsonify(result)
+
+
+@app.route("/api/xcontest/<path:site_name>")
+def site_xcontest(site_name):
+    """Return raw XContest flight list for a single site (cache bypassed)."""
+    site = next((s for s in SITES if s["name"] == site_name), None)
+    if not site:
+        return jsonify({"error": "Site not found"}), 404
+    # Invalidate xcontest cache for this site so we get fresh data
+    with xcontest._cache_lock:
+        xcontest._cache.pop(site["name"], None)
+    raw = xcontest.fetch_xc_flights(site)
+    return jsonify({**raw, "summary": xcontest.summarise(raw)})
 
 
 if __name__ == "__main__":
